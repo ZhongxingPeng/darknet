@@ -24,10 +24,14 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
             load_weights(&nets[i], weightfile);
         }
         if(clear) *nets[i].seen = 0;
-        nets[i].learning_rate *= ngpus;
     }
     srand(time(0));
     network net = nets[0];
+    image pred = get_network_image(net);
+
+    int div = net.w/pred.w;
+    assert(pred.w * div == net.w);
+    assert(pred.h * div == net.h);
 
     int imgs = net.batch * net.subdivisions * ngpus;
 
@@ -47,6 +51,7 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
     args.w = net.w;
     args.h = net.h;
     args.threads = 32;
+    args.scale = div;
 
     args.min = net.min_crop;
     args.max = net.max_crop;
@@ -90,9 +95,23 @@ void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, 
 #else
         loss = train_network(net, train);
 #endif
+        if(1){
+            image tr = float_to_image(net.w/div, net.h/div, 80, train.y.vals[net.batch]);
+            image im = float_to_image(net.w, net.h, net.c, train.X.vals[net.batch]);
+            image mask = mask_to_rgb(tr);
+            image prmask = mask_to_rgb(pred);
+            show_image(im, "input");
+            show_image(prmask, "pred");
+            show_image(mask, "truth");
+#ifdef OPENCV
+            cvWaitKey(100);
+#endif
+            free_image(mask);
+            free_image(prmask);
+        }
         if(avg_loss == -1) avg_loss = loss;
         avg_loss = avg_loss*.9 + loss*.1;
-        printf("%d, %.3f: %f, %f avg, %f rate, %lf seconds, %d images\n", get_current_batch(net), (float)(*net.seen)/N, loss, avg_loss, get_current_rate(net), sec(clock()-time), *net.seen);
+        printf("%ld, %.3f: %f, %f avg, %f rate, %lf seconds, %ld images\n", get_current_batch(net), (float)(*net.seen)/N, loss, avg_loss, get_current_rate(net), sec(clock()-time), *net.seen);
         free_data(train);
         if(*net.seen/N > epoch){
             epoch = *net.seen/N;

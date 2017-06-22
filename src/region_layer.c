@@ -434,17 +434,26 @@ void get_region_boxes(layer l, int w, int h, int netw, int neth, float thresh, f
 
 void forward_region_layer_gpu(const layer l, network net)
 {
-    copy_ongpu(l.batch*l.inputs, net.input_gpu, 1, l.output_gpu, 1);
+    copy_gpu(l.batch*l.inputs, net.input_gpu, 1, l.output_gpu, 1);
     int b, n;
     for (b = 0; b < l.batch; ++b){
         for(n = 0; n < l.n; ++n){
             int index = entry_index(l, b, n*l.w*l.h, 0);
-            activate_array_ongpu(l.output_gpu + index, 2*l.w*l.h, LOGISTIC);
+            activate_array_gpu(l.output_gpu + index, 2*l.w*l.h, LOGISTIC);
             index = entry_index(l, b, n*l.w*l.h, l.coords);
-            if(!l.background) activate_array_ongpu(l.output_gpu + index,   l.w*l.h, LOGISTIC);
+            if(!l.background) activate_array_gpu(l.output_gpu + index,   l.w*l.h, LOGISTIC);
         }
     }
     if (l.softmax_tree){
+        int mmin = 9000;
+        int mmax = 0;
+        int i;
+        for(i = 0; i < l.softmax_tree->groups; ++i){
+            int group_size = l.softmax_tree->group_size[i];
+            if (group_size < mmin) mmin = group_size;
+            if (group_size > mmax) mmax = group_size;
+        }
+        printf("%d %d %d \n", l.softmax_tree->groups, mmin, mmax);
         int index = entry_index(l, 0, 0, 5);
         softmax_tree(net.input_gpu + index, l.w*l.h, l.batch*l.n, l.inputs/l.n, 1, l.output_gpu + index, *l.softmax_tree);
         /*
@@ -536,12 +545,12 @@ void backward_region_layer_gpu(const layer l, network net)
     for (b = 0; b < l.batch; ++b){
         for(n = 0; n < l.n; ++n){
             int index = entry_index(l, b, n*l.w*l.h, 0);
-            gradient_array_ongpu(l.output_gpu + index, 2*l.w*l.h, LOGISTIC, l.delta_gpu + index);
+            gradient_array_gpu(l.output_gpu + index, 2*l.w*l.h, LOGISTIC, l.delta_gpu + index);
             index = entry_index(l, b, n*l.w*l.h, l.coords);
-            if(!l.background) gradient_array_ongpu(l.output_gpu + index,   l.w*l.h, LOGISTIC, l.delta_gpu + index);
+            if(!l.background) gradient_array_gpu(l.output_gpu + index,   l.w*l.h, LOGISTIC, l.delta_gpu + index);
         }
     }
-    axpy_ongpu(l.batch*l.inputs, 1, l.delta_gpu, 1, net.delta_gpu, 1);
+    axpy_gpu(l.batch*l.inputs, 1, l.delta_gpu, 1, net.delta_gpu, 1);
 }
 #endif
 
